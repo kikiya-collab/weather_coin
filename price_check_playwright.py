@@ -168,7 +168,7 @@ async def main():
     async with async_playwright() as p:
         # 로컬 테스트 시 headless=True, CI에서는 True로 변경
         browser = await p.chromium.launch(
-            headless=False,  # GitHub Actions에서 실행할 땐 True로 바꿔라
+            headless=True,  # GitHub Actions에서 실행할 땐 True로 바꿔라
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
