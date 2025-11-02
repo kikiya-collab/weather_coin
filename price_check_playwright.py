@@ -7,10 +7,18 @@ import requests
 import random
 from playwright.async_api import async_playwright
 
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 ITEM_IDS = ["1920684660", "2701336763"]
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+if TELEGRAM_TOKEN is not None:
+    TELEGRAM_TOKEN = TELEGRAM_TOKEN.strip()
+
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+if TELEGRAM_CHAT_ID is not None:
+    TELEGRAM_CHAT_ID = TELEGRAM_CHAT_ID.strip()
 
 def send_telegram_message(token, chat_id, message):
     if not token or not chat_id:
