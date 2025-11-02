@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime
 import requests
+import random
 from playwright.async_api import async_playwright
 
 ITEM_IDS = ["1920684660", "2701336763"]
@@ -24,43 +25,90 @@ def send_telegram_message(token, chat_id, message):
 
     
 
-async def fetch_price(page, item_no):
-    url = f"https://item.gmarket.co.kr/Item?goodscode={item_no}"
-    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    # 짧은 대기 후 동적 렌더된 가격 탐색
-    try:
-        await page.wait_for_selector(".price_real, .price", timeout=10000)
-        # 여러 요소가 있을 수 있으니 첫번째 텍스트 추출
-        price_text = await page.locator(".price_real, .price").first.text_content()
-        price_text = price_text.strip() if price_text else "N/A"
-    except Exception:
-        price_text = "N/A"
-    title = await page.title()
-    return {"상품ID": item_no, "상품명": title, "가격": price_text, "링크": url, "수집시각": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+# 자동화 노출 최소화용 초기화 스크립트
+STEALTH_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+window.navigator.chrome = { runtime: {} };
+Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+"""
+
+async def fetch_price_with_checks(page, item_id, max_retries=2):
+    url = f"https://item.gmarket.co.kr/Item?goodscode={item_id}"
+    for attempt in range(1, max_retries + 1):
+        try:
+            # 사람같은 약간의 행동: 스크롤/짧은 랜덤 대기
+            await page.evaluate("window.scrollTo(0, 200)")
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+
+            resp = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            status = resp.status if resp else None
+
+            # Access Denied 단서 검사: HTTP 상태나 주요 문구
+            content = await page.content()
+            if status and status >= 400:
+                print(f"[WARN] HTTP status {status} for {item_id} (attempt {attempt})")
+            if "Access Denied" in content or "access denied" in content.lower() or "403" in (str(status) if status else ""):
+                print(f"[WARN] Access Denied detected for {item_id} (attempt {attempt})")
+                # 재시도 전 짧은 백오프와 약간 더 사람같은 행동
+                await asyncio.sleep(2 + attempt * 2)
+                await page.context.clear_cookies()
+                continue
+
+            # 정상 페이지로 보이면 기존 fetch_price 로직으로 파싱
+            return await fetch_price(page, item_id)
+
+        except Exception as e:
+            print(f"[ERROR] fetch attempt {attempt} for {item_id}: {e}")
+            await asyncio.sleep(2 + attempt * 2)
+            continue
+
+    # 최대 재시도 실패 시 Access Denied 형태 결과 반환
+    return {"상품ID": item_id, "상품명": "Access Denied", "가격": "N/A", "링크": url, "수집시각": now_str()}
 
 async def main():
     results = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # 👈 헤드리스 모드 끄기 (로컬 테스트용)
+        # launch 인자: 자동화 표시 억제, 안정성 옵션 추가
+        browser = await p.chromium.launch(
+            headless=True,  # GitHub Actions 환경에서는 headless True 유지
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
+
         context = await browser.new_context(
             locale="ko-KR",
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36",
+            accept_downloads=False,
+            viewport={"width": 1280, "height": 800},
+            extra_http_headers={
+                "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+            }
         )
+
+        # 초기화 스크립트 삽입 (navigator.webdriver 등 덮어쓰기)
+        await context.add_init_script(STEALTH_SCRIPT)
+
         page = await context.new_page()
+
         for item in ITEM_IDS:
-            url = f"https://item.gmarket.co.kr/Item?goodscode={item}"
-            await page.goto(url, wait_until="domcontentloaded")  # 👈 안정적인 로딩
-            info = await fetch_price(page, item)
+            info = await fetch_price_with_checks(page, item, max_retries=3)
             print(info)
             results.append(info)
-            await asyncio.sleep(3)
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+
         await browser.close()
 
+    # 텔레그램 전송 기존 로직
     messages = []
     for r in results:
         messages.append(f"상품ID: {r['상품ID']}\n상품명: {r['상품명']}\n가격: {r['가격']}\n링크: {r['링크']}\n수집: {r['수집시각']}")
     summary = "\n\n".join(messages)
     send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"📦 G마켓 가격 알림\n\n{summary}")
+
 
 if __name__ == "__main__":
     print(f"🔍 TELEGRAM_TOKEN: {repr(TELEGRAM_TOKEN)}")
