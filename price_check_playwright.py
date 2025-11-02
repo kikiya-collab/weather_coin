@@ -116,7 +116,7 @@ async def main():
         page = await context.new_page()
 
         for item in ITEM_IDS:
-            info = await fetch_price_with_checks(page, item, max_retries=3)
+            info = await fetch_price_with_checks(context, item, max_retries=3)
             print(info)
             results.append(info)
             await asyncio.sleep(random.uniform(2.0, 4.0))
