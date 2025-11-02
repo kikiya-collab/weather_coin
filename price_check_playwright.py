@@ -22,6 +22,9 @@ def send_telegram_message(token, chat_id, message):
     except Exception as e:
         print("Telegram send failed:", e)
 
+    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)  # 테스트 임시 추가
+    print("TELEGRAM_CHAT_ID:", TELEGRAM_CHAT_ID)
+
 async def fetch_price(page, item_no):
     url = f"https://item.gmarket.co.kr/Item?goodscode={item_no}"
     await page.goto(url, wait_until="domcontentloaded", timeout=30000)
