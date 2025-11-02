@@ -33,34 +33,63 @@ Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko'] });
 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
 """
 
-async def fetch_price_with_checks(page, item_id, max_retries=2):
+async def fetch_price_with_checks(page, item_id, max_retries=3):
     url = f"https://item.gmarket.co.kr/Item?goodscode={item_id}"
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"[INFO] Attempt {attempt} for {item_id}")
             # 사람같은 약간의 행동: 스크롤/짧은 랜덤 대기
             await page.evaluate("window.scrollTo(0, 200)")
             await asyncio.sleep(random.uniform(0.5, 1.2))
 
             resp = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             status = resp.status if resp else None
+            print(f"[DEBUG] goto {url} -> status: {status}")
+
+            content = await page.content()
+            print(f"[DEBUG] content length: {len(content)} | contains Access Denied: {'Access Denied' in content or 'access denied' in content.lower()}")
+
+            # 디버그: 현재 쿠키와 UA (개인정보 유출 주의, 로그에 민감 정보는 남기지 마)
+            try:
+                cookies = await page.context.cookies()
+                print(f"[DEBUG] cookies count: {len(cookies)}")
+            except Exception as e:
+                print(f"[DEBUG] cookie read error: {e}")
+
+            ua = await page.evaluate("navigator.userAgent")
+            print(f"[DEBUG] userAgent (sample): {ua[:120]}")
 
             # Access Denied 단서 검사: HTTP 상태나 주요 문구
-            content = await page.content()
             if status and status >= 400:
                 print(f"[WARN] HTTP status {status} for {item_id} (attempt {attempt})")
-            if "Access Denied" in content or "access denied" in content.lower() or "403" in (str(status) if status else ""):
+            if "Access Denied" in content or "access denied" in content.lower() or (status and str(status).startswith("4")):
                 print(f"[WARN] Access Denied detected for {item_id} (attempt {attempt})")
                 # 재시도 전 짧은 백오프와 약간 더 사람같은 행동
                 await asyncio.sleep(2 + attempt * 2)
-                await page.context.clear_cookies()
+                try:
+                    await page.context.clear_cookies()
+                except Exception as e:
+                    print(f"[DEBUG] clear_cookies error: {e}")
+                # 옵션: 새 페이지로 바꿔서 재시도 (간단한 컨텍스트 리셋)
+                try:
+                    await page.close()
+                    page = await page.context.new_page()
+                except Exception:
+                    pass
                 continue
 
             # 정상 페이지로 보이면 기존 fetch_price 로직으로 파싱
             return await fetch_price(page, item_id)
 
         except Exception as e:
-            print(f"[ERROR] fetch attempt {attempt} for {item_id}: {e}")
+            print(f"[ERROR] fetch attempt {attempt} for {item_id}: {repr(e)}")
             await asyncio.sleep(2 + attempt * 2)
+            # 재시도 전에 가능하면 페이지 재생성
+            try:
+                await page.close()
+                page = await page.context.new_page()
+            except Exception:
+                pass
             continue
 
     # 최대 재시도 실패 시 Access Denied 형태 결과 반환
