@@ -60,6 +60,7 @@ async def main():
     send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"📦 G마켓 가격 알림\n\n{summary}")
 
 if __name__ == "__main__":
-    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)  # 테스트 임시 추가
-    print("TELEGRAM_CHAT_ID:", TELEGRAM_CHAT_ID)
+    print(f"🔍 TELEGRAM_TOKEN: {repr(TELEGRAM_TOKEN)}")
+    print(f"🔍 TELEGRAM_CHAT_ID: {repr(TELEGRAM_CHAT_ID)}")
+
     asyncio.run(main())
