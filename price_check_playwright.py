@@ -22,8 +22,7 @@ def send_telegram_message(token, chat_id, message):
     except Exception as e:
         print("Telegram send failed:", e)
 
-    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)  # 테스트 임시 추가
-    print("TELEGRAM_CHAT_ID:", TELEGRAM_CHAT_ID)
+    
 
 async def fetch_price(page, item_no):
     url = f"https://item.gmarket.co.kr/Item?goodscode={item_no}"
@@ -61,4 +60,6 @@ async def main():
     send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"📦 G마켓 가격 알림\n\n{summary}")
 
 if __name__ == "__main__":
+    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)  # 테스트 임시 추가
+    print("TELEGRAM_CHAT_ID:", TELEGRAM_CHAT_ID)
     asyncio.run(main())
