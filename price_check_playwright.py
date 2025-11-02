@@ -41,18 +41,21 @@ async def fetch_price(page, item_no):
 async def main():
     results = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(locale="ko-KR", user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36")
+        browser = await p.chromium.launch(headless=False)  # 👈 헤드리스 모드 끄기 (로컬 테스트용)
+        context = await browser.new_context(
+            locale="ko-KR",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
+        )
         page = await context.new_page()
         for item in ITEM_IDS:
+            url = f"https://item.gmarket.co.kr/Item?goodscode={item}"
+            await page.goto(url, wait_until="domcontentloaded")  # 👈 안정적인 로딩
             info = await fetch_price(page, item)
             print(info)
             results.append(info)
-            # 랜덤 지연 비슷하게 동작 (간단하게 고정 지연 사용)
             await asyncio.sleep(3)
         await browser.close()
 
-    # 텔레그램으로 요약 전송 (가격 정상값만 모아서 보낼지 전체 전송 선택)
     messages = []
     for r in results:
         messages.append(f"상품ID: {r['상품ID']}\n상품명: {r['상품명']}\n가격: {r['가격']}\n링크: {r['링크']}\n수집: {r['수집시각']}")
