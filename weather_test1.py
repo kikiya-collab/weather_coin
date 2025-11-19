@@ -4,11 +4,11 @@ import datetime
 import urllib.parse
 
 def get_weather():
-    # KMA 인증키 가져오기 & URL 인코딩
     service_key = urllib.parse.quote_plus(os.getenv("KMA_KEY").strip())
     nx, ny = 61, 129  # 서울 신내동
 
-    now = datetime.datetime.now()
+    # 현재 UTC 시간 → KST로 변환
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
     base_date = now.strftime("%Y%m%d")
     hour = now.hour
 
@@ -61,7 +61,7 @@ def get_weather():
         if temp and rain_prob:
             break
 
-    # PM10/PM2.5는 로컬 환경에서 불가 → None
+    # PM10/PM2.5는 아직 통합 API 사용 안 하면 None
     pm10 = None
     pm25 = None
 
@@ -78,7 +78,7 @@ def main():
 
     temp, rain_prob, pm10, pm25 = get_weather()
 
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    today = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%Y-%m-%d")
     message = (
         f"📅 {today}\n"
         f"🌡️ 기온: {temp}°C\n"
@@ -92,6 +92,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
