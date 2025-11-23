@@ -1,37 +1,35 @@
 name: Daily Weather Telegram Bot
 
-# 수동 실행 및 자동 스케줄링
 on:
-  workflow_dispatch:
   schedule:
-    # 매일 KST 기준 12시 (UTC 기준 03시)
-    - cron: "0 3 * * *"
-
-env:
-  TZ: "Asia/Seoul"
+    - cron: '3 3 * * *' # UTC 기준 → KST 12:03
+  workflow_dispatch:    # 수동 실행 옵션
 
 jobs:
-  weather:
+  send_weather:
     runs-on: ubuntu-latest
+
     steps:
-      - name: 체크아웃 레포
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Python 설정
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: 의존성 설치
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pytz
+          pip install requests
 
-      - name: Telegram 날씨 봇 실행
-        run: python weather_test1.py
-        env:
-          KMA_KEY: ${{ secrets.KMA_KEY }}
-          AIR_KEY: ${{ secrets.AIR_KEY }}
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      - name: Set environment variables
+        run: |
+          echo "KMA_KEY=${{ secrets.KMA_KEY }}" >> $GITHUB_ENV
+          echo "AIRKOREA_KEY=${{ secrets.AIRKOREA_KEY }}" >> $GITHUB_ENV
+          echo "TG_TOKEN=${{ secrets.TG_TOKEN }}" >> $GITHUB_ENV
+          echo "TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}" >> $GITHUB_ENV
+
+      - name: Run Weather Bot
+        run: python weather_bot.py
 
