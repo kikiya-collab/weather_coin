@@ -31,5 +31,5 @@ jobs:
           echo "TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}" >> $GITHUB_ENV
 
       - name: Run Weather Bot
-        run: python weather_bot.py
+        run: python weather_test1.py
 
