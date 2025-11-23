@@ -1,38 +1,89 @@
+# 깃허브 서버용 날씨예보 및 미세먼지 알림 코드
+
 import os
-import requests
-from datetime import datetime, timedelta, timezone
 import time
 import urllib.parse
+import requests
+from datetime import datetime, timedelta, timezone
 
-def get_weather(retries=3):
-    service_key = urllib.parse.quote_plus(os.getenv("KMA_KEY").strip())
-    nx, ny = 61, 129  # 서울 신내동
-
+# -------------------------------
+# 1) 가장 안정적인 base_time 계산
+# -------------------------------
+def get_stable_basetime():
     kst = timezone(timedelta(hours=9))
     now = datetime.now(kst)
     base_date = now.strftime("%Y%m%d")
     hour = now.hour
 
-    # 안정적인 base_time 선택 (최소 1시간 전 발표 기준)
+    # 기상청 발표 시간대 기준
     if hour < 2:
-        base_time = "2300"
-        base_date = (now - timedelta(days=1)).strftime("%Y%m%d")
+        return (now - timedelta(days=1)).strftime("%Y%m%d"), "2300"
     elif hour < 5:
-        base_time = "0200"
+        return base_date, "0200"
     elif hour < 8:
-        base_time = "0500"
+        return base_date, "0500"
     elif hour < 11:
-        base_time = "0800"
+        return base_date, "0800"
     elif hour < 14:
-        base_time = "1100"
+        return base_date, "1100"
     elif hour < 17:
-        base_time = "1400"
+        return base_date, "1400"
     elif hour < 20:
-        base_time = "1700"
+        return base_date, "1700"
     elif hour < 23:
-        base_time = "2000"
+        return base_date, "2000"
     else:
-        base_time = "2300"
+        return base_date, "2300"
+
+# ---------------------------------------
+# 2) 기온/강수 POP을 가장 안정적으로 추출
+# ---------------------------------------
+def extract_temp_pop(items):
+    temp = None
+    pop = None
+
+    # TMP, POP이 나오면 그냥 "첫 번째로 나오는 값"을 사용 → 가장 안정적
+    for it in items:
+        if it["category"] == "TMP" and temp is None:
+            temp = it["fcstValue"]
+        if it["category"] == "POP" and pop is None:
+            pop = it["fcstValue"]
+        if temp and pop:
+            break
+
+    return temp, pop
+
+# ----------------------------------------------------
+# 3) 미세먼지 API (AirKorea: 항상 실시간 데이터 제공)
+# ----------------------------------------------------
+def get_air_quality():
+    key = urllib.parse.quote_plus(os.getenv("AIRKOREA_KEY").strip())
+    station = "중랑구"   # 신내동 기준 측정소
+
+    url = (
+        "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc/"
+        "getMsrstnAcctoRltmMesureDnsty"
+        f"?serviceKey={key}&returnType=json&numOfRows=1&pageNo=1&stationName={station}&dataTerm=DAILY&ver=1.0"
+    )
+    try:
+        r = requests.get(url, timeout=20)
+        data = r.json()
+        rows = data.get("response", {}).get("body", {}).get("items", [])
+        if not rows:
+            return None, None
+        row = rows[0]
+        return row.get("pm10Value"), row.get("pm25Value")
+    except:
+        return None, None
+
+# ----------------------------------------------------
+# 4) 통합 기상 API 호출 + fallback 지원
+# ----------------------------------------------------
+def get_weather(retries=3):
+    service_key = urllib.parse.quote_plus(os.getenv("KMA_KEY").strip())
+    nx, ny = 61, 129  # 서울 신내동
+
+    base_date, base_time = get_stable_basetime()
 
     url = (
         "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -41,46 +92,48 @@ def get_weather(retries=3):
     )
     headers = {"User-Agent": "Mozilla/5.0"}
 
+    items = None
+
+    # -----------------------------
+    # API Retry + fallback 구조
+    # -----------------------------
     for attempt in range(retries):
         try:
             res = requests.get(url, headers=headers, timeout=30)
             if res.status_code != 200:
-                print(f"Attempt {attempt+1}: HTTP {res.status_code}")
                 time.sleep(5)
                 continue
+
             data = res.json()
             items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            if not items:
-                print(f"Attempt {attempt+1}: Empty items, retrying...")
-                time.sleep(5)
-                continue
-            break
-        except Exception as e:
-            print(f"Attempt {attempt+1} Exception:", e)
+            if items:
+                break
+        except:
             time.sleep(5)
-    else:
-        return None, None, None, None, "API 응답 지연, 나중에 시도하세요"
 
-    temp = None
-    rain_prob = None
-    for item in items:
-        if item.get("category") == "TMP" and temp is None:
-            temp = item.get("fcstValue")
-        if item.get("category") == "POP" and rain_prob is None:
-            rain_prob = item.get("fcstValue")
-        if temp and rain_prob:
-            break
+    if not items:
+        return None, None, None, None, "날씨 API 응답 없음"
 
-    pm10 = None
-    pm25 = None
+    # 온도/POP 추출
+    temp, rain_prob = extract_temp_pop(items)
+
+    # 미세먼지
+    pm10, pm25 = get_air_quality()
 
     return temp, rain_prob, pm10, pm25, None
 
+# ----------------------------------------------------
+# 텔레그램 전송
+# ----------------------------------------------------
 def send_telegram_message(token, chat_id, message):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message}
-    requests.post(url, data=payload)
+    requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data={"chat_id": chat_id, "text": message},
+    )
 
+# ----------------------------------------------------
+# 메인
+# ----------------------------------------------------
 def main():
     token = os.getenv("TG_TOKEN")
     chat_id = os.getenv("TG_CHAT_ID")
@@ -89,18 +142,21 @@ def main():
 
     kst = timezone(timedelta(hours=9))
     today = datetime.now(kst).strftime("%Y-%m-%d")
-    message = (
+
+    msg = (
         f"📅 {today}\n"
         f"🌡️ 기온: {temp if temp is not None else '데이터 없음'}°C\n"
         f"🌧️ 강수확률: {rain_prob if rain_prob is not None else '데이터 없음'}%\n"
         f"🌫️ 미세먼지(PM10): {pm10 if pm10 is not None else '데이터 없음'}\n"
         f"😷 초미세먼지(PM2.5): {pm25 if pm25 is not None else '데이터 없음'}"
     )
-    if error_msg:
-        message += f"\n⚠️ {error_msg}"
 
-    send_telegram_message(token, chat_id, message)
-    print(message)
+    if error_msg:
+        msg += f"\n⚠️ {error_msg}"
+
+    send_telegram_message(token, chat_id, msg)
+    print(msg)
+
 
 if __name__ == "__main__":
     main()
