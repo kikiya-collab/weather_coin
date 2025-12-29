@@ -1,4 +1,4 @@
-# 깃허브 서버용 날씨예보 및 미세먼지 알림 코드
+# 깃허브 서버용 날씨예보 및 미세먼지 알림 코드(코인 목록 추가)
 
 import os
 import time
@@ -42,7 +42,6 @@ def extract_temp_pop(items):
     temp = None
     pop = None
 
-    # TMP, POP이 나오면 그냥 "첫 번째로 나오는 값"을 사용 → 가장 안정적
     for it in items:
         if it["category"] == "TMP" and temp is None:
             temp = it["fcstValue"]
@@ -94,9 +93,6 @@ def get_weather(retries=3):
 
     items = None
 
-    # -----------------------------
-    # API Retry + fallback 구조
-    # -----------------------------
     for attempt in range(retries):
         try:
             res = requests.get(url, headers=headers, timeout=30)
@@ -114,10 +110,7 @@ def get_weather(retries=3):
     if not items:
         return None, None, None, None, "날씨 API 응답 없음"
 
-    # 온도/POP 추출
     temp, rain_prob = extract_temp_pop(items)
-
-    # 미세먼지
     pm10, pm25 = get_air_quality()
 
     return temp, rain_prob, pm10, pm25, None
@@ -143,6 +136,7 @@ def main():
     kst = timezone(timedelta(hours=9))
     today = datetime.now(kst).strftime("%Y-%m-%d")
 
+    # 날씨/미세먼지 메시지
     msg = (
         f"📅 {today}\n"
         f"🌡️ 기온: {temp if temp is not None else '데이터 없음'}°C\n"
@@ -154,6 +148,50 @@ def main():
     if error_msg:
         msg += f"\n⚠️ {error_msg}"
 
+    # -------------------------------
+    # 코인 3개 조회 (ETH, SEI, XRP)
+    # -------------------------------
+    url = "https://api.upbit.com/v1/ticker?markets=KRW-ETH,KRW-SEI,KRW-XRP"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        data = response.json()
+
+        # ETH
+        eth_data = next(item for item in data if item['market'] == 'KRW-ETH')
+        eth_price = eth_data['trade_price']
+        eth_time = eth_data['trade_time_kst']
+        eth_time_fmt = f"{eth_time[:2]}:{eth_time[2:4]}"
+        eth_rate = eth_data['signed_change_rate'] * 100
+        eth_arrow = "🔺" if eth_rate > 0 else ("🔽" if eth_rate < 0 else "")
+        eth_info = f"{eth_price} 원 ({eth_rate:.2f}% {eth_arrow})"
+
+        # SEI
+        sei_data = next(item for item in data if item['market'] == 'KRW-SEI')
+        sei_price = sei_data['trade_price']
+        sei_time = sei_data['trade_time_kst']
+        sei_time_fmt = f"{sei_time[:2]}:{sei_time[2:4]}"
+        sei_rate = sei_data['signed_change_rate'] * 100
+        sei_arrow = "🔺" if sei_rate > 0 else ("🔽" if sei_rate < 0 else "")
+        sei_info = f"{sei_price} 원 ({sei_rate:.2f}% {sei_arrow})"
+
+        # XRP
+        xrp_data = next(item for item in data if item['market'] == 'KRW-XRP')
+        xrp_price = xrp_data['trade_price']
+        xrp_time = xrp_data['trade_time_kst']
+        xrp_rate = xrp_data['signed_change_rate'] * 100
+        xrp_arrow = "🔺" if xrp_rate > 0 else ("🔽" if xrp_rate < 0 else "")
+        xrp_info = f"{xrp_price} 원 ({xrp_rate:.2f}% {xrp_arrow})"
+
+        # 코인 정보 메시지 추가
+        msg += (
+            f"\n\n💰 코인 가격 알림 (현재시간: {eth_time_fmt})\n"
+            f"ETH 가격: {eth_info}\n"
+            f"SEI 가격: {sei_info}\n"
+            f"XRP 가격: {xrp_info}"
+        )
+
+    # 최종 텔레그램 전송
     send_telegram_message(token, chat_id, msg)
     print(msg)
 
